@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,18 +11,22 @@ from app.auth import require_consumer_key
 from app.config import get_settings
 from app.db import get_db
 from app.models import SignalRow, utcnow
-from app.schemas import AckIn, AckOut, PendingOut, SignalOut
+from app.progress import build_progress
+from app.schemas import AckIn, AckOut, PendingOut, SignalOut, SignalProgress
+from app.webhooks import deliver_webhook, webhook_payload
 
 router = APIRouter(prefix="/v1/queue", tags=["queue"])
 
 
 def _row_to_out(row: SignalRow) -> SignalOut:
+    prog = build_progress(row)
     return SignalOut(
         id=row.id,
         external_id=row.external_id,
         status=row.status,
         payload=row.payload or {},
         result=row.result,
+        progress=SignalProgress(**prog),
         created_at=row.created_at,
         acked_at=row.acked_at,
     )
@@ -72,6 +76,7 @@ def list_pending(
 def ack_signal(
     signal_id: str,
     body: AckIn,
+    background_tasks: BackgroundTasks,
     _: None = Depends(require_consumer_key),
     db: Session = Depends(get_db),
 ):
@@ -89,4 +94,12 @@ def ack_signal(
     row.acked_at = utcnow()
     row.updated_at = utcnow()
     db.commit()
+    db.refresh(row)
+
+    callback = (row.payload or {}).get("callback_url")
+    if callback:
+        event = "signal.done" if row.status == "done" else "signal.failed"
+        payload = webhook_payload(row, event=event)
+        background_tasks.add_task(deliver_webhook, callback.strip(), payload)
+
     return AckOut(id=signal_id, status=row.status, ok=True)

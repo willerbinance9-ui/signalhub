@@ -50,6 +50,7 @@ X-Provider-Key: your-provider-secret
 | `message` | string | no | Raw text for logs |
 | `provider_name` | string | no | Display name in Quantum logs (e.g. `Alpha Signals`) |
 | `sendername` | string | no | Name or username of the user who posted the signal — appears in the MT5 order comment (max 64 chars, truncated to 31 in MT5) |
+| `callback_url` | string | no | HTTPS URL — hub POSTs a JSON webhook when the signal reaches `done` or `failed` |
 | `confidence` | number | no | 0–100 (default 100 for trusted execution) |
 
 ### Example — market buy gold
@@ -188,12 +189,171 @@ print(data["id"], data["status"])
 
 ---
 
+## Track signal progress (provider)
+
+After submitting a signal, poll status or use an optional webhook. **Senders only see their own signals** — list and lookup endpoints require `sendername` matching the value you sent on POST.
+
+### Status lifecycle
+
+| `status` | Meaning |
+|----------|---------|
+| `pending` | Queued — waiting for Quantum to poll |
+| `processing` | Quantum picked it up and is executing on MT5 |
+| `done` | Finished (check `progress.executed` and `result.log_action`) |
+| `failed` | Could not execute — see `result.error` |
+
+Every status response includes a **`progress`** object:
+
+```json
+{
+  "stage": "executed",
+  "message": "Trade executed on MT5",
+  "executed": true
+}
+```
+
+`stage` values: `queued`, `processing`, `executed`, `failed`, `skipped`, `done`
+
+### Option A — Poll by signal ID
+
+Save `id` from the POST response, then poll every 2–5 seconds until `status` is `done` or `failed`:
+
+```bash
+curl "https://your-hub.onrender.com/v1/signals/SIGNAL_UUID?sendername=willerfx" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+Pass **`sendername`** so users cannot read each other's signals (returns 404 if the signal belongs to another sender).
+
+### Option B — Poll by your `external_id`
+
+If you use `external_id` on POST:
+
+```bash
+curl "https://your-hub.onrender.com/v1/signals/external/post-8842?sendername=willerfx" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+### Option C — List a sender's recent signals
+
+```bash
+curl "https://your-hub.onrender.com/v1/signals?sendername=willerfx&status=done&limit=20" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+Query parameters:
+
+| Param | Required | Description |
+|-------|----------|-------------|
+| `sendername` | **yes** | Only signals posted by this user |
+| `status` | no | Filter: `pending`, `processing`, `done`, `failed` |
+| `external_id` | no | Filter to one platform message ID |
+| `limit` | no | 1–100 (default 50) |
+| `offset` | no | Pagination offset |
+| `since` | no | ISO datetime — only signals after this time |
+
+Response:
+
+```json
+{
+  "sendername": "willerfx",
+  "count": 1,
+  "items": [
+    {
+      "id": "uuid",
+      "external_id": "post-8842",
+      "status": "done",
+      "progress": {
+        "stage": "executed",
+        "message": "Trade executed on MT5",
+        "executed": true
+      },
+      "payload": { "symbol": "XAUUSD", "sendername": "willerfx", "...": "..." },
+      "result": {
+        "setup_id": "abc123",
+        "log_action": "executed",
+        "error": null
+      },
+      "created_at": "2026-06-21T12:00:00Z",
+      "acked_at": "2026-06-21T12:00:05Z"
+    }
+  ]
+}
+```
+
+### Option D — Webhook (push)
+
+Include `callback_url` when posting a signal. When Quantum finishes, the hub POSTs once to your URL:
+
+```json
+{
+  "external_id": "post-8842",
+  "action": "open",
+  "symbol": "XAUUSD",
+  "direction": "buy",
+  "sendername": "willerfx",
+  "callback_url": "https://myapp.com/api/signalhub/webhook"
+}
+```
+
+Webhook body (your server receives):
+
+```json
+{
+  "event": "signal.done",
+  "id": "uuid",
+  "external_id": "post-8842",
+  "status": "done",
+  "sendername": "willerfx",
+  "action": "open",
+  "symbol": "XAUUSD",
+  "direction": "buy",
+  "progress": {
+    "stage": "executed",
+    "message": "Trade executed on MT5",
+    "executed": true
+  },
+  "result": {
+    "setup_id": "abc123",
+    "log_action": "executed",
+    "error": null
+  },
+  "created_at": "2026-06-21T12:00:00.000Z",
+  "acked_at": "2026-06-21T12:00:05.000Z"
+}
+```
+
+Events: `signal.done` or `signal.failed`. Delivery is best-effort (no retries). Use polling as a fallback.
+
+### JavaScript — poll until executed
+
+```javascript
+async function waitForSignal(signalId, sendername) {
+  for (let i = 0; i < 60; i++) {
+    const res = await fetch(
+      `https://your-hub.onrender.com/v1/signals/${signalId}?sendername=${encodeURIComponent(sendername)}`,
+      { headers: { "X-Provider-Key": process.env.SIGNAL_HUB_PROVIDER_KEY } },
+    );
+    const data = await res.json();
+    if (data.status === "done" || data.status === "failed") {
+      return data;
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error("timeout waiting for signal");
+}
+```
+
+---
+
 ## GET /v1/signals/{id}
 
 Check signal status. Auth: `X-Provider-Key` or `X-Consumer-Key`.
 
+Providers should pass **`?sendername=`** so each user only sees their own trades.
+
 ```bash
-curl "https://your-hub.onrender.com/v1/signals/SIGNAL_UUID" \
+curl "https://your-hub.onrender.com/v1/signals/SIGNAL_UUID?sendername=willerfx" \
   -H "X-Provider-Key: YOUR_PROVIDER_KEY"
 ```
 
@@ -204,6 +364,11 @@ Response:
   "id": "uuid",
   "external_id": "post-8842",
   "status": "done",
+  "progress": {
+    "stage": "executed",
+    "message": "Trade executed on MT5",
+    "executed": true
+  },
   "payload": { "...": "..." },
   "result": {
     "setup_id": "abc123",

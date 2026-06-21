@@ -96,6 +96,76 @@ class TestSignalHub(unittest.TestCase):
         self.assertEqual(r.status_code, 201)
         got = client.get(f"/v1/signals/{r.json()['id']}", headers=PROVIDER).json()
         self.assertEqual(got["payload"]["sendername"], "willerfx")
+        self.assertEqual(got["progress"]["stage"], "queued")
+
+    def test_list_signals_by_sendername(self):
+        for ext, sn in [("ext-a", "alice"), ("ext-b", "bob"), ("ext-c", "alice")]:
+            client.post("/v1/signals", json={
+                "external_id": ext, "action": "open", "symbol": "XAUUSD",
+                "direction": "buy", "sendername": sn,
+            }, headers=PROVIDER)
+
+        listed = client.get("/v1/signals?sendername=alice", headers=PROVIDER)
+        self.assertEqual(listed.status_code, 200)
+        data = listed.json()
+        self.assertEqual(data["sendername"], "alice")
+        self.assertEqual(data["count"], 2)
+        ext_ids = {i["external_id"] for i in data["items"]}
+        self.assertEqual(ext_ids, {"ext-a", "ext-c"})
+
+    def test_sender_cannot_read_other_sender_signal(self):
+        created = client.post("/v1/signals", json={
+            "external_id": "ext-private",
+            "action": "open",
+            "symbol": "XAUUSD",
+            "direction": "buy",
+            "sendername": "alice",
+        }, headers=PROVIDER).json()
+
+        wrong = client.get(
+            f"/v1/signals/{created['id']}?sendername=bob",
+            headers=PROVIDER,
+        )
+        self.assertEqual(wrong.status_code, 404)
+
+        ok = client.get(
+            f"/v1/signals/{created['id']}?sendername=alice",
+            headers=PROVIDER,
+        )
+        self.assertEqual(ok.status_code, 200)
+
+    def test_get_by_external_id(self):
+        client.post("/v1/signals", json={
+            "external_id": "my-post-99",
+            "action": "open",
+            "symbol": "EURUSD",
+            "direction": "sell",
+            "sendername": "trader1",
+        }, headers=PROVIDER)
+        r = client.get("/v1/signals/external/my-post-99?sendername=trader1", headers=PROVIDER)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["external_id"], "my-post-99")
+
+    def test_progress_after_ack(self):
+        created = client.post("/v1/signals", json={
+            "external_id": "ext-progress",
+            "action": "open",
+            "symbol": "XAUUSD",
+            "direction": "buy",
+            "sendername": "willerfx",
+        }, headers=PROVIDER).json()
+        client.post(
+            f"/v1/queue/{created['id']}/ack",
+            json={"status": "done", "setup_id": "s1", "log_action": "executed"},
+            headers=CONSUMER,
+        )
+        got = client.get(
+            f"/v1/signals/{created['id']}?sendername=willerfx",
+            headers=PROVIDER,
+        ).json()
+        self.assertEqual(got["status"], "done")
+        self.assertEqual(got["progress"]["stage"], "executed")
+        self.assertTrue(got["progress"]["executed"])
 
 
 if __name__ == "__main__":

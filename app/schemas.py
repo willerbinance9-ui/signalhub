@@ -32,11 +32,23 @@ class SignalIn(BaseModel):
         None, max_length=64,
         description="Display name or username of the user who posted the signal (shown in MT5 order comment)",
     )
+    callback_url: str | None = Field(
+        None, max_length=500,
+        description="HTTPS URL to POST when signal reaches done/failed (optional webhook)",
+    )
     confidence: float | None = Field(None, ge=0, le=100)
 
     @field_validator("sendername", mode="before")
     @classmethod
     def norm_sendername(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
+    @field_validator("callback_url", mode="before")
+    @classmethod
+    def norm_callback_url(cls, v):
         if v is None:
             return None
         s = str(v).strip()
@@ -60,17 +72,30 @@ class SignalIn(BaseModel):
         return v
 
 
+class SignalProgress(BaseModel):
+    stage: str
+    message: str
+    executed: bool
+
+
 class SignalOut(BaseModel):
     id: str
     external_id: str | None
     status: str
     payload: dict
     result: dict | None = None
+    progress: SignalProgress | None = None
     created_at: datetime
     acked_at: datetime | None = None
     duplicate: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class SignalListOut(BaseModel):
+    items: list[SignalOut]
+    count: int
+    sendername: str | None = None
 
 
 class AckIn(BaseModel):
