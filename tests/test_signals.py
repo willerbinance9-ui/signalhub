@@ -84,6 +84,19 @@ class TestSignalHub(unittest.TestCase):
         self.assertEqual(got["status"], "done")
         self.assertEqual(got["result"]["setup_id"], "setup-abc")
 
+    def test_create_with_sendername(self):
+        body = {
+            "external_id": "ext-sender",
+            "action": "open",
+            "symbol": "XAUUSD",
+            "direction": "buy",
+            "sendername": "willerfx",
+        }
+        r = client.post("/v1/signals", json=body, headers=PROVIDER)
+        self.assertEqual(r.status_code, 201)
+        got = client.get(f"/v1/signals/{r.json()['id']}", headers=PROVIDER).json()
+        self.assertEqual(got["payload"]["sendername"], "willerfx")
+
 
 if __name__ == "__main__":
     unittest.main()

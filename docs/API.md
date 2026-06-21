@@ -49,6 +49,7 @@ X-Provider-Key: your-provider-secret
 | `ticket` | integer | no | MT5 ticket for modify/close when symbol ambiguous |
 | `message` | string | no | Raw text for logs |
 | `provider_name` | string | no | Display name in Quantum logs (e.g. `Alpha Signals`) |
+| `sendername` | string | no | Name or username of the user who posted the signal — appears in the MT5 order comment (max 64 chars, truncated to 31 in MT5) |
 | `confidence` | number | no | 0–100 (default 100 for trusted execution) |
 
 ### Example — market buy gold
@@ -63,9 +64,12 @@ X-Provider-Key: your-provider-secret
   "sl": 2640.0,
   "tp": 2680.0,
   "message": "BUY GOLD NOW SL 2640 TP 2680",
-  "provider_name": "My Signal Platform"
+  "provider_name": "My Signal Platform",
+  "sendername": "willerfx"
 }
 ```
+
+When `sendername` is set, Quantum writes `QTE {sendername}` on the MT5 order comment (max 31 characters). Without it, hub trades use `QTE hub`.
 
 ### Responses
 
@@ -90,7 +94,8 @@ curl -X POST "https://your-hub.onrender.com/v1/signals" \
     "order_type": "market",
     "sl": 2640,
     "tp": 2680,
-    "provider_name": "My Platform"
+    "provider_name": "My Platform",
+    "sendername": "willerfx"
   }'
 ```
 
@@ -112,6 +117,7 @@ const res = await fetch("https://your-hub.onrender.com/v1/signals", {
     sl: 2640,
     tp: 2680,
     provider_name: "My Platform",
+    sendername: "willerfx",
   }),
 });
 const signal = await res.json();
@@ -135,6 +141,7 @@ resp = httpx.post(
         "sl": 2640.0,
         "tp": 2680.0,
         "provider_name": "My Platform",
+        "sendername": "willerfx",
     },
     timeout=30,
 )

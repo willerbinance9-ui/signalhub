@@ -28,7 +28,19 @@ class SignalIn(BaseModel):
     ticket: int | None = None
     message: str | None = Field(None, max_length=4000)
     provider_name: str | None = Field(None, max_length=120)
+    sendername: str | None = Field(
+        None, max_length=64,
+        description="Display name or username of the user who posted the signal (shown in MT5 order comment)",
+    )
     confidence: float | None = Field(None, ge=0, le=100)
+
+    @field_validator("sendername", mode="before")
+    @classmethod
+    def norm_sendername(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
 
     @field_validator("symbol")
     @classmethod
