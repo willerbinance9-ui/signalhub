@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.db import init_db
-from app.routers import queue, signals
+from app.routers import logs, positions, queue, signals
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -28,6 +28,8 @@ app = FastAPI(
 
 app.include_router(signals.router)
 app.include_router(queue.router)
+app.include_router(logs.router)
+app.include_router(positions.router)
 
 
 @app.get("/health")

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_any_key, require_provider_key
 from app.db import get_db
+from app.events import record_event, record_for_signal
 from app.models import SignalRow
 from app.progress import build_progress
 from app.schemas import SignalIn, SignalListOut, SignalOut, SignalProgress
@@ -78,6 +79,11 @@ def create_signal(
             )
         ).scalar_one_or_none()
         if existing:
+            record_for_signal(
+                db, existing, "duplicate",
+                f"Duplicate POST for external_id={ext}",
+                detail={"external_id": ext},
+            )
             response.status_code = status.HTTP_200_OK
             return _row_to_out(existing, duplicate=True)
 
@@ -91,6 +97,13 @@ def create_signal(
     db.add(row)
     db.commit()
     db.refresh(row)
+    sym = body.symbol or "—"
+    who = body.sendername or "unknown"
+    record_for_signal(
+        db, row, "created",
+        f"Signal queued: {body.action} {sym} by {who}",
+        detail={"external_id": ext, "action": body.action, "symbol": body.symbol},
+    )
     response.status_code = status.HTTP_201_CREATED
     return _row_to_out(row)
 

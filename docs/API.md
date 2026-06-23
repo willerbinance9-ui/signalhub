@@ -19,7 +19,30 @@ Two API keys (set as environment variables on Render):
 | `X-Provider-Key` | Your third-party app posting signals | `PROVIDER_KEYS` (comma-separated) |
 | `X-Consumer-Key` | AARE Quantum VPS polling the queue | `CONSUMER_KEY` |
 
----
+### Environment variables (Render)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | yes | PostgreSQL connection string |
+| `PROVIDER_KEYS` | yes | Comma-separated provider API keys |
+| `CONSUMER_KEY` | yes | Secret for Quantum to poll/ack |
+| `QUANTUM_BRIDGE_URL` | for positions | Quantum VPS URL, e.g. `http://your-vps:8090` — enables live position API |
+
+### Endpoint overview (provider)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/signals` | Submit open/close/modify signal |
+| `GET` | `/v1/signals` | List signals for a sender |
+| `GET` | `/v1/signals/{id}` | Poll signal status + progress |
+| `GET` | `/v1/signals/external/{external_id}` | Lookup by your message ID |
+| `GET` | `/v1/logs` | Activity audit log for a sender |
+| `GET` | `/v1/positions` | Live MT5 positions for a sender |
+| `POST` | `/v1/positions/{ticket}/close` | Close one position |
+| `POST` | `/v1/positions/close-all` | Close all sender positions |
+| `GET` | `/health` | Health check |
+
+All provider endpoints require `X-Provider-Key`. Sender-scoped routes require `?sendername=`.
 
 ## POST /v1/signals
 
@@ -325,6 +348,51 @@ Webhook body (your server receives):
 
 Events: `signal.done` or `signal.failed`. Delivery is best-effort (no retries). Use polling as a fallback.
 
+### Option E — Activity log (audit trail)
+
+Full event history for one sender (POST, poll pickup, execution, webhook):
+
+```bash
+curl "https://your-hub.onrender.com/v1/logs?sendername=willerfx&limit=50" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+Optional filter: `&signal_id=UUID`
+
+Response:
+
+```json
+{
+  "sendername": "willerfx",
+  "count": 3,
+  "items": [
+    {
+      "id": "event-uuid",
+      "signal_id": "signal-uuid",
+      "sendername": "willerfx",
+      "event": "created",
+      "message": "Signal queued: open XAUUSD by willerfx",
+      "detail": { "action": "open", "symbol": "XAUUSD" },
+      "created_at": "2026-06-21T12:00:00Z"
+    },
+    {
+      "event": "processing",
+      "message": "Quantum picked up: open XAUUSD",
+      "created_at": "2026-06-21T12:00:02Z"
+    },
+    {
+      "event": "executed",
+      "message": "Completed: executed",
+      "created_at": "2026-06-21T12:00:05Z"
+    }
+  ]
+}
+```
+
+Event types: `created`, `duplicate`, `processing`, `executed`, `failed`, `webhook_sent`, `webhook_failed`
+
+Only events for the requested `sendername` are returned — senders cannot see each other's activity.
+
 ### JavaScript — poll until executed
 
 ```javascript
@@ -382,6 +450,115 @@ Response:
 ```
 
 Status values: `pending` → `processing` → `done` | `failed`
+
+---
+
+## Sender positions (live MT5)
+
+Senders can view and close **only their own** open trades. Positions are matched by MT5 order comment `QTE {sendername}` (set when you POST with `sendername`).
+
+Requires `QUANTUM_BRIDGE_URL` on Signal Hub pointing at your Quantum VPS (same host as MT5, port `8090`). Hub calls Quantum with `X-Consumer-Key`.
+
+### GET /v1/positions
+
+List open positions for one sender.
+
+```bash
+curl "https://your-hub.onrender.com/v1/positions?sendername=willerfx" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+Response:
+
+```json
+{
+  "sendername": "willerfx",
+  "count": 1,
+  "items": [
+    {
+      "ticket": 12345678,
+      "symbol": "XAUUSD",
+      "direction": "buy",
+      "lot": 0.1,
+      "entry": 2650.5,
+      "sl": 2640.0,
+      "tp": 2680.0,
+      "profit": 12.5,
+      "price": 2651.2,
+      "comment": "QTE willerfx",
+      "opened_at": "2026-06-21T14:00:00+00:00",
+      "sendername": "willerfx"
+    }
+  ]
+}
+```
+
+### POST /v1/positions/{ticket}/close
+
+Close one position by MT5 ticket (must belong to sender).
+
+```bash
+curl -X POST "https://your-hub.onrender.com/v1/positions/12345678/close?sendername=willerfx" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "ticket": 12345678,
+  "symbol": "XAUUSD",
+  "profit": 12.5,
+  "sendername": "willerfx"
+}
+```
+
+### POST /v1/positions/close-all
+
+Close every open position for this sender.
+
+```bash
+curl -X POST "https://your-hub.onrender.com/v1/positions/close-all?sendername=willerfx" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "closed": 2,
+  "count": 2,
+  "sendername": "willerfx",
+  "items": [
+    { "ticket": 12345678, "symbol": "XAUUSD", "profit": 12.5, "ok": true },
+    { "ticket": 12345679, "symbol": "EURUSD", "profit": -3.2, "ok": true }
+  ]
+}
+```
+
+### Alternative — close via signal queue
+
+You can also POST a signal (async, polled by Quantum):
+
+```json
+{
+  "action": "close",
+  "symbol": "XAUUSD",
+  "ticket": 12345678,
+  "sendername": "willerfx"
+}
+```
+
+Or close all for sender only:
+
+```json
+{
+  "action": "close_all",
+  "sendername": "willerfx"
+}
+```
 
 ---
 
@@ -451,6 +628,7 @@ No auth. Used by Render health checks.
 3. Set secrets:
    - `PROVIDER_KEYS= key1,key2` (for your app)
    - `CONSUMER_KEY= long-random-secret` (for Quantum dashboard)
+   - `QUANTUM_BRIDGE_URL= http://your-quantum-vps:8090` (for live positions API — VPS must be reachable from Render)
 4. Copy service URL into Quantum → Settings → **Signal Hub URL** + consumer key.
 
 ## Quantum setup
@@ -458,7 +636,8 @@ No auth. Used by Render health checks.
 1. Dashboard → Settings → enable **Signal Hub listener**
 2. Set **Signal Hub URL** = `https://your-hub.onrender.com`
 3. Set **Signal Hub consumer key** = same as `CONSUMER_KEY`
-4. Ensure operating mode is **Auto trade** and MT5 is connected
-5. Trusted direct execution applies (risk limits only, no MTF gate)
+4. Expose Quantum on port **8090** (or tunnel) so Render can reach `QUANTUM_BRIDGE_URL`
+5. Ensure operating mode is **Auto trade** and MT5 is connected
+6. Trusted direct execution applies (risk limits only, no MTF gate)
 
 Signals poll every 5 seconds by default (`signal_hub_poll_seconds`).

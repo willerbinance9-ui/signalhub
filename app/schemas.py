@@ -114,3 +114,66 @@ class AckOut(BaseModel):
 class PendingOut(BaseModel):
     items: list[SignalOut]
     count: int
+
+
+class SignalEventOut(BaseModel):
+    id: str
+    signal_id: str | None
+    sendername: str | None
+    event: str
+    message: str
+    detail: dict | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SignalEventListOut(BaseModel):
+    items: list[SignalEventOut]
+    count: int
+    sendername: str | None = None
+
+
+class PositionOut(BaseModel):
+    ticket: int
+    symbol: str
+    direction: str
+    lot: float
+    entry: float
+    sl: float | None = None
+    tp: float | None = None
+    profit: float | None = None
+    price: float | None = None
+    comment: str | None = None
+    opened_at: str | None = None
+    sendername: str | None = None
+
+
+class PositionListOut(BaseModel):
+    sendername: str
+    count: int
+    items: list[dict]
+
+
+class PositionCloseOut(BaseModel):
+    ok: bool = True
+    ticket: int
+    symbol: str | None = None
+    profit: float | None = None
+    sendername: str | None = None
+
+
+class PositionCloseItemOut(BaseModel):
+    ticket: int
+    symbol: str | None = None
+    profit: float | None = None
+    ok: bool = True
+    error: str | None = None
+
+
+class PositionCloseAllOut(BaseModel):
+    ok: bool = True
+    closed: int = 0
+    count: int = 0
+    items: list[dict] = []
+    sendername: str | None = None

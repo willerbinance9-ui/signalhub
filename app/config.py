@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./signal_hub.db"
     provider_keys: str = ""   # comma-separated X-Provider-Key values
     consumer_key: str = ""    # X-Consumer-Key for Quantum
+    quantum_bridge_url: str = ""  # Quantum VPS URL for live positions (e.g. http://host:8090)
     queue_batch_size: int = 20
     processing_timeout_seconds: int = 300
 

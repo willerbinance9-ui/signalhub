@@ -29,13 +29,32 @@ def webhook_payload(row: SignalRow, *, event: str) -> dict:
     }
 
 
-def deliver_webhook(url: str, body: dict) -> None:
+def deliver_webhook(url: str, body: dict, *, signal_id: str | None = None) -> None:
     """POST completion event to provider callback (best-effort)."""
+    ok = False
+    err = None
     try:
         r = httpx.post(url.strip(), json=body, timeout=15)
         if r.status_code >= 400:
             log.warning("webhook %s returned %s", url[:80], r.status_code)
+            err = f"HTTP {r.status_code}"
         else:
+            ok = True
             log.info("webhook delivered to %s event=%s", url[:80], body.get("event"))
     except Exception as exc:
+        err = str(exc)[:200]
         log.warning("webhook delivery failed %s: %s", url[:80], exc)
+
+    if signal_id:
+        from app.db import SessionLocal
+        from app.events import record_for_signal
+        from app.models import SignalRow
+        with SessionLocal() as db:
+            row = db.get(SignalRow, signal_id)
+            if row:
+                record_for_signal(
+                    db, row,
+                    "webhook_sent" if ok else "webhook_failed",
+                    f"Webhook {'delivered' if ok else 'failed'} to {url[:80]}",
+                    detail={"callback_url": url[:200], "error": err, "event": body.get("event")},
+                )

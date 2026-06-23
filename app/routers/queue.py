@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_consumer_key
 from app.config import get_settings
 from app.db import get_db
+from app.events import record_for_signal
 from app.models import SignalRow, utcnow
 from app.progress import build_progress
 from app.schemas import AckIn, AckOut, PendingOut, SignalOut, SignalProgress
@@ -67,7 +68,32 @@ def list_pending(
         db.commit()
         for row in rows:
             db.refresh(row)
+            payload = row.payload or {}
+            sym = payload.get("symbol") or "—"
+            record_for_signal(
+                db, row, "processing",
+                f"Quantum picked up: {payload.get('action', 'open')} {sym}",
+                detail={"consumer": "quantum"},
+                commit=True,
+            )
 
+    items = [_row_to_out(r) for r in rows]
+    return PendingOut(items=items, count=len(items))
+
+
+@router.get("/recent", response_model=PendingOut)
+def list_recent(
+    limit: int = 50,
+    _: None = Depends(require_consumer_key),
+    db: Session = Depends(get_db),
+):
+    """Read-only recent signals for Quantum dashboard (does not change status)."""
+    lim = max(1, min(limit, 100))
+    rows = db.execute(
+        select(SignalRow)
+        .order_by(SignalRow.created_at.desc())
+        .limit(lim)
+    ).scalars().all()
     items = [_row_to_out(r) for r in rows]
     return PendingOut(items=items, count=len(items))
 
@@ -96,10 +122,23 @@ def ack_signal(
     db.commit()
     db.refresh(row)
 
+    evt = "executed" if row.status == "done" else "failed"
+    msg = body.error or f"Ack {body.log_action or row.status}"
+    if row.status == "done" and body.log_action:
+        msg = f"Completed: {body.log_action}"
+    record_for_signal(
+        db, row, evt, msg,
+        detail={
+            "setup_id": body.setup_id,
+            "log_action": body.log_action,
+            "error": body.error,
+        },
+    )
+
     callback = (row.payload or {}).get("callback_url")
     if callback:
         event = "signal.done" if row.status == "done" else "signal.failed"
         payload = webhook_payload(row, event=event)
-        background_tasks.add_task(deliver_webhook, callback.strip(), payload)
+        background_tasks.add_task(deliver_webhook, callback.strip(), payload, signal_id=row.id)
 
     return AckOut(id=signal_id, status=row.status, ok=True)

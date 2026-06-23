@@ -167,6 +167,39 @@ class TestSignalHub(unittest.TestCase):
         self.assertEqual(got["progress"]["stage"], "executed")
         self.assertTrue(got["progress"]["executed"])
 
+    def test_api_logs_by_sendername(self):
+        client.post("/v1/signals", json={
+            "external_id": "ext-log-1",
+            "action": "open",
+            "symbol": "XAUUSD",
+            "direction": "buy",
+            "sendername": "logalice",
+        }, headers=PROVIDER)
+        logs = client.get("/v1/logs?sendername=logalice", headers=PROVIDER)
+        self.assertEqual(logs.status_code, 200)
+        data = logs.json()
+        self.assertEqual(data["sendername"], "logalice")
+        self.assertGreaterEqual(data["count"], 1)
+        events = {i["event"] for i in data["items"]}
+        self.assertIn("created", events)
+
+        bob = client.get("/v1/logs?sendername=bob", headers=PROVIDER)
+        self.assertEqual(bob.json()["count"], 0)
+
+    def test_queue_recent(self):
+        body = {
+            "external_id": "ext-recent",
+            "action": "open",
+            "symbol": "EURUSD",
+            "direction": "buy",
+            "sendername": "trader1",
+        }
+        created = client.post("/v1/signals", json=body, headers=PROVIDER).json()
+        recent = client.get("/v1/queue/recent?limit=10", headers=CONSUMER)
+        self.assertEqual(recent.status_code, 200)
+        ids = [i["id"] for i in recent.json()["items"]]
+        self.assertIn(created["id"], ids)
+
 
 if __name__ == "__main__":
     unittest.main()

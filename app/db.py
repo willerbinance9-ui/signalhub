@@ -23,6 +23,7 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 def init_db() -> None:
     from app import models  # noqa: F401
+    from app import event_log  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
 
