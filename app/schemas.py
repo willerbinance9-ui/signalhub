@@ -1,6 +1,7 @@
 """Request/response schemas."""
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Literal
 
@@ -69,6 +70,42 @@ class SignalIn(BaseModel):
             return "buy"
         if s in ("sell", "short", "bearish"):
             return "sell"
+        return v
+
+    @field_validator("order_type", mode="before")
+    @classmethod
+    def norm_order_type(cls, v):
+        """Accept messy UI labels e.g. 'limit (or market / stop)' from mobile apps."""
+        if v is None:
+            return "market"
+        s = str(v).lower().strip()
+        if s in ("market", "limit", "stop"):
+            return s
+        m = re.search(r"\b(market|limit|stop)\b", s)
+        if m:
+            return m.group(1)
+        if any(k in s for k in ("mkt", "at market", "market order")):
+            return "market"
+        if "limit" in s:
+            return "limit"
+        if "stop" in s:
+            return "stop"
+        return "market"
+
+    @field_validator("entry", mode="before")
+    @classmethod
+    def norm_entry(cls, v):
+        """Accept entry ranges like '5160 - 5170' (uses midpoint)."""
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip().replace(",", "")
+        nums = re.findall(r"[\d.]+", s)
+        if len(nums) >= 2:
+            return round((float(nums[0]) + float(nums[1])) / 2, 8)
+        if len(nums) == 1:
+            return float(nums[0])
         return v
 
 

@@ -63,8 +63,8 @@ X-Provider-Key: your-provider-secret
 | `action` | string | yes | `open`, `add`, `close`, `breakeven`, `modify`, `partial_close`, `close_all` |
 | `symbol` | string | open/add | e.g. `XAUUSD`, `GBPUSD`, `Volatility 75 Index` — must exist on Quantum watchlist |
 | `direction` | string | open/add | `buy` or `sell` (also accepts `long`/`short`) |
-| `order_type` | string | no | `market` (default), `limit`, `stop` |
-| `entry` | number | no | Limit/stop price; omit for market (Quantum uses live MT5 price) |
+| `order_type` | string | no | `market` (default), `limit`, `stop` — hub normalizes messy labels (e.g. `limit (or market / stop)` → `limit`) |
+| `entry` | number or string | no | Limit/stop price or range (`5160 - 5170` uses midpoint); omit for market |
 | `sl` | number | no | Stop loss; Quantum auto-builds 2R if omitted (trusted path) |
 | `tp` | number | no | Take profit |
 | `lot` | number | no | Fixed lot (optional; Quantum sizes from risk % if omitted) |

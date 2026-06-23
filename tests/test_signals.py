@@ -200,6 +200,25 @@ class TestSignalHub(unittest.TestCase):
         ids = [i["id"] for i in recent.json()["items"]]
         self.assertIn(created["id"], ids)
 
+    def test_order_type_messy_ui_label(self):
+        """TraderRank and similar apps may send placeholder text as order_type."""
+        body = {
+            "external_id": "ext-messy-ot",
+            "action": "open",
+            "symbol": "XAUUSD",
+            "direction": "buy",
+            "order_type": "limit (or market / stop)",
+            "entry": "5160 - 5170",
+            "sl": 5150,
+            "tp": 5200,
+            "sendername": "willerfx",
+        }
+        r = client.post("/v1/signals", json=body, headers=PROVIDER)
+        self.assertEqual(r.status_code, 201, r.text)
+        payload = r.json()["payload"]
+        self.assertEqual(payload["order_type"], "limit")
+        self.assertEqual(payload["entry"], 5165.0)
+
 
 if __name__ == "__main__":
     unittest.main()
