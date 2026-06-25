@@ -38,6 +38,34 @@ class SignalIn(BaseModel):
         description="HTTPS URL to POST when signal reaches done/failed (optional webhook)",
     )
     confidence: float | None = Field(None, ge=0, le=100)
+    image_url: str | None = Field(
+        None, max_length=2000,
+        description="HTTPS URL of chart/screenshot (forwarded to Telegram with the signal)",
+    )
+    image_base64: str | None = Field(
+        None, max_length=7_000_000,
+        description="Base64 chart image (or data:image/...;base64,...) — optional alternative to image_url",
+    )
+    image_mime: str | None = Field(
+        None, max_length=64,
+        description="MIME type when using image_base64 (default image/jpeg)",
+    )
+
+    @field_validator("image_url", mode="before")
+    @classmethod
+    def norm_image_url(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
+    @field_validator("image_mime", mode="before")
+    @classmethod
+    def norm_image_mime(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        return s or None
 
     @field_validator("sendername", mode="before")
     @classmethod
@@ -79,6 +107,8 @@ class SignalIn(BaseModel):
         if v is None:
             return "market"
         s = str(v).lower().strip()
+        if s in ("open", "now", "at market", "market now"):
+            return "market"
         if s in ("market", "limit", "stop"):
             return s
         m = re.search(r"\b(market|limit|stop)\b", s)

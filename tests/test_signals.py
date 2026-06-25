@@ -220,5 +220,37 @@ class TestSignalHub(unittest.TestCase):
         self.assertEqual(payload["entry"], 5165.0)
 
 
+    def test_order_type_open_alias(self):
+        body = {
+            "external_id": "ext-open-alias",
+            "action": "open",
+            "symbol": "XAUUSD",
+            "direction": "buy",
+            "order_type": "open",
+            "sl": 2640,
+            "tp": 2680,
+        }
+        r = client.post("/v1/signals", json=body, headers=PROVIDER)
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(r.json()["payload"]["order_type"], "market")
+
+    def test_image_fields_stored(self):
+        body = {
+            "external_id": "ext-img",
+            "action": "open",
+            "symbol": "XAUUSD",
+            "direction": "buy",
+            "order_type": "limit",
+            "entry": 2650,
+            "image_url": "https://example.com/chart.png",
+            "image_mime": "image/png",
+        }
+        r = client.post("/v1/signals", json=body, headers=PROVIDER)
+        self.assertEqual(r.status_code, 201)
+        p = r.json()["payload"]
+        self.assertEqual(p["image_url"], "https://example.com/chart.png")
+        self.assertEqual(p["order_type"], "limit")
+
+
 if __name__ == "__main__":
     unittest.main()

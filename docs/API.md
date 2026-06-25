@@ -63,10 +63,13 @@ X-Provider-Key: your-provider-secret
 | `action` | string | yes | `open`, `add`, `close`, `breakeven`, `modify`, `partial_close`, `close_all` |
 | `symbol` | string | open/add | e.g. `XAUUSD`, `GBPUSD`, `Volatility 75 Index` — must exist on Quantum watchlist |
 | `direction` | string | open/add | `buy` or `sell` (also accepts `long`/`short`) |
-| `order_type` | string | no | `market` (default), `limit`, `stop` — hub normalizes messy labels (e.g. `limit (or market / stop)` → `limit`) |
-| `entry` | number or string | no | Limit/stop price or range (`5160 - 5170` uses midpoint); omit for market |
+| `order_type` | string | no | `market` / `open` = execute at **current price**; `limit` = pending at `entry`; `stop` = stop order at `entry`. Hub normalizes messy labels (e.g. `limit (or market / stop)` → `limit`) |
+| `entry` | number or string | limit/stop | Limit/stop price or range (`5160 - 5170` uses midpoint). **Omit for `market`/`open`** — Quantum uses live bid/ask |
 | `sl` | number | no | Stop loss; Quantum auto-builds 2R if omitted (trusted path) |
 | `tp` | number | no | Take profit |
+| `image_url` | string | no | HTTPS URL to a chart/screenshot — forwarded to your Telegram alert with the signal |
+| `image_base64` | string | no | Base64-encoded image (or `data:image/png;base64,...`) — alternative to `image_url` |
+| `image_mime` | string | no | `image/jpeg`, `image/png`, `image/webp` (default `image/jpeg` when using base64) |
 | `lot` | number | no | Fixed lot (optional; Quantum sizes from risk % if omitted) |
 | `lot_scale` | number | no | Scale for add/partial (0.01–10) |
 | `ticket` | integer | no | MT5 ticket for modify/close when symbol ambiguous |
@@ -75,6 +78,50 @@ X-Provider-Key: your-provider-secret
 | `sendername` | string | no | Name or username of the user who posted the signal — appears in the MT5 order comment (max 64 chars, truncated to 31 in MT5) |
 | `callback_url` | string | no | HTTPS URL — hub POSTs a JSON webhook when the signal reaches `done` or `failed` |
 | `confidence` | number | no | 0–100 (default 100 for trusted execution) |
+
+### Execution style: OPEN vs LIMIT
+
+| `order_type` | Meaning | `entry` | Quantum behavior |
+|--------------|---------|---------|------------------|
+| `open` or `market` | Open now at live price | omit | **MARKET** at current bid/ask |
+| `limit` | Pending limit from your signal | **required** | **LIMIT** at `entry` |
+| `stop` | Stop order from your signal | **required** | **STOP** at `entry` |
+
+When a chart image is included (`image_url` or `image_base64`), Quantum sends a **Telegram photo** with the signal caption (SL/TP, sender, message).
+
+### Example — OPEN at market with chart image
+
+```json
+{
+  "external_id": "post-8843",
+  "action": "open",
+  "symbol": "XAUUSD",
+  "direction": "buy",
+  "order_type": "open",
+  "sl": 2640.0,
+  "tp": 2680.0,
+  "sendername": "willerfx",
+  "image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "image_mime": "image/png"
+}
+```
+
+### Example — LIMIT at your entry with image URL
+
+```json
+{
+  "external_id": "post-8844",
+  "action": "open",
+  "symbol": "XAUUSD",
+  "direction": "sell",
+  "order_type": "limit",
+  "entry": 2685.0,
+  "sl": 2695.0,
+  "tp": 2665.0,
+  "sendername": "willerfx",
+  "image_url": "https://your-cdn.com/charts/gold-setup.png"
+}
+```
 
 ### Example — market buy gold
 
