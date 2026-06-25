@@ -27,13 +27,16 @@ def _headers() -> dict[str, str]:
     return {"X-Consumer-Key": key}
 
 
-def _request(method: str, path: str, *, params: dict | None = None) -> dict:
+def _request(method: str, path: str, *, params: dict | None = None,
+             json: dict | None = None) -> dict:
     url, key = _bridge_config()
     if not url or not key:
         raise RuntimeError("QUANTUM_BRIDGE_URL and CONSUMER_KEY must be set on Signal Hub")
     full = f"{url}{path}"
     try:
-        r = httpx.request(method, full, headers=_headers(), params=params, timeout=30)
+        r = httpx.request(
+            method, full, headers=_headers(), params=params, json=json, timeout=30,
+        )
         r.raise_for_status()
         return r.json()
     except httpx.HTTPStatusError as exc:
@@ -63,3 +66,15 @@ def close_all_positions(sendername: str) -> dict:
         "/v1/hub/positions/close-all",
         params={"sendername": sendername},
     )
+
+
+def get_quote(symbol: str) -> dict:
+    return _request("GET", "/v1/hub/quote", params={"symbol": symbol})
+
+
+def post_quote(symbol: str) -> dict:
+    return _request("POST", "/v1/hub/quote", json={"symbol": symbol})
+
+
+def sender_report(days: int = 90) -> dict:
+    return _request("GET", "/v1/hub/senders/report", params={"days": days})

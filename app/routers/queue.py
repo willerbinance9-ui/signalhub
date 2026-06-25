@@ -49,6 +49,10 @@ def list_pending(
         )
     ).scalars().all()
     for row in stale:
+        if (row.result or {}).get("setup_id"):
+            row.status = "done"
+            row.updated_at = utcnow()
+            continue
         row.status = "pending"
         row.updated_at = utcnow()
     if stale:
@@ -109,6 +113,17 @@ def ack_signal(
     row = db.get(SignalRow, signal_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "signal not found")
+
+    if row.status in ("done", "failed") and row.acked_at:
+        if body.log_action in ("executed", "ea_failed") and row.status == "done":
+            row.result = {
+                "setup_id": body.setup_id or (row.result or {}).get("setup_id"),
+                "log_action": body.log_action,
+                "error": body.error,
+            }
+            row.updated_at = utcnow()
+            db.commit()
+        return AckOut(id=signal_id, status=row.status, ok=True)
 
     row.status = "done" if body.status == "done" else "failed"
     row.result = {

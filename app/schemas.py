@@ -244,3 +244,40 @@ class PositionCloseAllOut(BaseModel):
     count: int = 0
     items: list[dict] = []
     sendername: str | None = None
+
+
+class QuoteIn(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=64)
+
+
+class QuoteOut(BaseModel):
+    symbol: str
+    resolved_symbol: str
+    bid: float
+    ask: float
+    price: float
+    mid: float
+    spread: float
+    digits: int = 5
+    point: float = 0.00001
+    time: str
+    source: str = "mt5"
+
+
+class SenderStatOut(BaseModel):
+    sender: str
+    signals: int = 0
+    executed: int = 0
+    skipped: int = 0
+    failed: int = 0
+    closed_trades: int = 0
+    wins: int = 0
+    losses: int = 0
+    profit: float = 0.0
+    win_rate: float | None = None
+
+
+class SenderReportOut(BaseModel):
+    days: int = 90
+    total_senders: int = 0
+    senders: list[SenderStatOut] = []

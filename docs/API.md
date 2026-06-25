@@ -500,6 +500,86 @@ Status values: `pending` → `processing` → `done` | `failed`
 
 ---
 
+## Live market quote
+
+Get the **current bid/ask/mid** from your MT5 terminal via Quantum. Requires `QUANTUM_BRIDGE_URL` on Signal Hub.
+
+### GET /v1/quote?symbol=XAUUSD
+
+```bash
+curl "https://your-hub.onrender.com/v1/quote?symbol=XAUUSD" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+### POST /v1/quote
+
+```bash
+curl -X POST "https://your-hub.onrender.com/v1/quote" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"symbol": "GOLD"}'
+```
+
+Response:
+
+```json
+{
+  "symbol": "GOLD",
+  "resolved_symbol": "XAUUSD",
+  "bid": 2650.10,
+  "ask": 2650.30,
+  "price": 2650.20,
+  "mid": 2650.20,
+  "spread": 0.20,
+  "digits": 2,
+  "point": 0.01,
+  "time": "2026-06-25T14:30:00Z",
+  "source": "mt5"
+}
+```
+
+Alias codes like `GOLD`, `VIX75`, `BOOM1000` are resolved to broker symbol names automatically.
+
+---
+
+## Sender performance report
+
+Rank who posted the most signals and their **closed-trade win rate** (matched by MT5 comment `QTE {sendername}`).
+
+### GET /v1/senders/report?days=90
+
+```bash
+curl "https://your-hub.onrender.com/v1/senders/report?days=90" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+Response:
+
+```json
+{
+  "days": 90,
+  "total_senders": 2,
+  "senders": [
+    {
+      "sender": "willerfx",
+      "signals": 42,
+      "executed": 28,
+      "skipped": 14,
+      "failed": 0,
+      "closed_trades": 25,
+      "wins": 16,
+      "losses": 9,
+      "profit": 340.5,
+      "win_rate": 64.0
+    }
+  ]
+}
+```
+
+Skipped/passed signals are logged in Quantum but **not** sent to Telegram by default.
+
+---
+
 ## Sender positions (live MT5)
 
 Senders can view and close **only their own** open trades. Positions are matched by MT5 order comment `QTE {sendername}` (set when you POST with `sendername`).
