@@ -265,6 +265,7 @@ class QuoteOut(BaseModel):
 
 
 class SenderStatOut(BaseModel):
+    rank: int | None = None
     sender: str
     signals: int = 0
     executed: int = 0
@@ -275,9 +276,24 @@ class SenderStatOut(BaseModel):
     losses: int = 0
     profit: float = 0.0
     win_rate: float | None = None
+    profit_factor: float = 0.0
+    expectancy: float = 0.0
+    profitable: bool = False
+
+
+class SenderReportSummaryOut(BaseModel):
+    total_profit: float = 0.0
+    total_closed_trades: int = 0
+    profitable_senders: int = 0
+    unprofitable_senders: int = 0
 
 
 class SenderReportOut(BaseModel):
     days: int = 90
+    sort: str = "profit"
+    min_closed_trades: int = 0
     total_senders: int = 0
+    returned: int = 0
+    generated_at: str | None = None
+    summary: SenderReportSummaryOut | None = None
     senders: list[SenderStatOut] = []

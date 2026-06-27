@@ -76,5 +76,32 @@ def post_quote(symbol: str) -> dict:
     return _request("POST", "/v1/hub/quote", json={"symbol": symbol})
 
 
-def sender_report(days: int = 90) -> dict:
-    return _request("GET", "/v1/hub/senders/report", params={"days": days})
+def sender_report(
+    days: int = 90,
+    *,
+    sort: str = "profit",
+    min_closed_trades: int = 0,
+    limit: int = 50,
+) -> dict:
+    return _request(
+        "GET",
+        "/v1/hub/senders/report",
+        params={
+            "days": days,
+            "sort": sort,
+            "min_closed_trades": min_closed_trades,
+            "limit": limit,
+        },
+    )
+
+
+def sender_profitability(days: int = 90, *, min_closed_trades: int = 1, limit: int = 50) -> dict:
+    return _request(
+        "GET",
+        "/v1/hub/senders/profitability",
+        params={
+            "days": days,
+            "min_closed_trades": min_closed_trades,
+            "limit": limit,
+        },
+    )

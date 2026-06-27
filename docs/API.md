@@ -544,24 +544,62 @@ Alias codes like `GOLD`, `VIX75`, `BOOM1000` are resolved to broker symbol names
 
 ## Sender performance report
 
-Rank who posted the most signals and their **closed-trade win rate** (matched by MT5 comment `QTE {sendername}`).
+Rank signal senders by **net P/L (profitability)**, win rate, signal volume, or profit factor. Closed trades are matched via:
 
-### GET /v1/senders/report?days=90
+- MT5 order comment `QTE {sendername}` (Telegram / manual sources)
+- Hub setup metadata `hub_sendername` on linked setups
+
+### GET /v1/senders/report
+
+Full leaderboard with optional filters and sort.
+
+| Query | Default | Description |
+|-------|---------|-------------|
+| `days` | `90` | Lookback window (7–365) |
+| `sort` | `profit` | `profit` · `win_rate` · `signals` · `profit_factor` · `expectancy` |
+| `min_closed_trades` | `0` | Hide senders with fewer closed trades |
+| `limit` | `50` | Max rows returned (1–200) |
 
 ```bash
-curl "https://your-hub.onrender.com/v1/senders/report?days=90" \
+curl "https://your-hub.onrender.com/v1/senders/report?days=90&sort=profit&min_closed_trades=1" \
   -H "X-Provider-Key: YOUR_PROVIDER_KEY"
 ```
 
-Response:
+### GET /v1/senders/profitability
+
+Convenience endpoint: **only senders with ≥1 closed trade**, sorted by net profit. **Rank 1 = most profitable.**
+
+| Query | Default | Description |
+|-------|---------|-------------|
+| `days` | `90` | Lookback window (7–365) |
+| `min_closed_trades` | `1` | Minimum closed trades to appear |
+| `limit` | `50` | Max rows (1–200) |
+
+```bash
+curl "https://your-hub.onrender.com/v1/senders/profitability?days=90" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+**Response** (both endpoints):
 
 ```json
 {
   "days": 90,
-  "total_senders": 2,
+  "sort": "profit",
+  "min_closed_trades": 1,
+  "total_senders": 5,
+  "returned": 5,
+  "generated_at": "2026-06-27T21:00:00Z",
+  "summary": {
+    "total_profit": 412.35,
+    "total_closed_trades": 38,
+    "profitable_senders": 3,
+    "unprofitable_senders": 2
+  },
   "senders": [
     {
-      "sender": "willerfx",
+      "rank": 1,
+      "sender": "willer_Fx",
       "signals": 42,
       "executed": 28,
       "skipped": 14,
@@ -570,10 +608,48 @@ Response:
       "wins": 16,
       "losses": 9,
       "profit": 340.5,
-      "win_rate": 64.0
+      "win_rate": 64.0,
+      "profit_factor": 1.85,
+      "expectancy": 13.62,
+      "profitable": true
+    },
+    {
+      "rank": 2,
+      "sender": "alice",
+      "signals": 10,
+      "executed": 8,
+      "skipped": 2,
+      "failed": 0,
+      "closed_trades": 8,
+      "wins": 3,
+      "losses": 5,
+      "profit": -120.0,
+      "win_rate": 37.5,
+      "profit_factor": 0.42,
+      "expectancy": -15.0,
+      "profitable": false
     }
   ]
 }
+```
+
+| Field | Meaning |
+|-------|---------|
+| `rank` | Position in the sorted list (1 = best for chosen sort) |
+| `profit` | Net closed-trade P/L ($) |
+| `profit_factor` | Gross wins ÷ gross losses |
+| `expectancy` | Average $ per closed trade |
+| `profitable` | `true` when `profit > 0` and `closed_trades > 0` |
+
+**Direct Quantum API** (same JSON, dashboard auth or hub consumer key on `/v1/hub/*`):
+
+```bash
+# Dashboard session / API auth
+curl "http://your-vps:8090/api/signal-hub/senders/profitability?days=90"
+
+# Hub bridge (Signal Hub → Quantum)
+curl "http://your-vps:8090/v1/hub/senders/profitability?days=90" \
+  -H "X-Consumer-Key: YOUR_CONSUMER_KEY"
 ```
 
 Skipped/passed signals are logged in Quantum but **not** sent to Telegram by default.
