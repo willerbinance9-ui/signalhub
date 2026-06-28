@@ -178,6 +178,21 @@ class AckOut(BaseModel):
     ok: bool = True
 
 
+class InvalidateIn(BaseModel):
+    reason: str | None = Field(
+        None, max_length=500,
+        description="Why the setup is no longer valid (shown to Quantum and in webhooks)",
+    )
+
+
+class InvalidateOut(BaseModel):
+    id: str
+    status: str
+    ok: bool = True
+    progress: SignalProgress | None = None
+    duplicate: bool = False
+
+
 class PendingOut(BaseModel):
     items: list[SignalOut]
     count: int

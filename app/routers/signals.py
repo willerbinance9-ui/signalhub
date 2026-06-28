@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,15 +11,16 @@ from app.auth import require_any_key, require_provider_key
 from app.db import get_db
 from app.events import record_event, record_for_signal
 from app.models import SignalRow
+from app.invalidation import invalidate_row
 from app.progress import build_progress
-from app.schemas import SignalIn, SignalListOut, SignalOut, SignalProgress
+from app.schemas import SignalIn, SignalListOut, SignalOut, SignalProgress, InvalidateIn, InvalidateOut
 from app.signal_query import apply_sendername_filter, assert_sender_access
 
 router = APIRouter(prefix="/v1", tags=["signals"])
 
 _OPEN_ACTIONS = {"open", "add"}
 _FOLLOW_ACTIONS = {"close", "breakeven", "modify", "partial_close", "add"}
-_VALID_STATUSES = {"pending", "processing", "done", "failed"}
+_VALID_STATUSES = {"pending", "processing", "done", "failed", "invalidated"}
 
 
 def _validate_body(body: SignalIn) -> None:
@@ -178,3 +179,77 @@ def get_signal(
     if provider_hash and sendername:
         assert_sender_access(row, sendername)
     return _row_to_out(row)
+
+
+def _invalidate_response(row: SignalRow, *, duplicate: bool = False) -> InvalidateOut:
+    prog = build_progress(row)
+    return InvalidateOut(
+        id=row.id,
+        status=row.status,
+        ok=True,
+        progress=SignalProgress(**prog),
+        duplicate=duplicate,
+    )
+
+
+@router.post("/signals/{signal_id}/invalidate", response_model=InvalidateOut)
+def invalidate_signal_by_id(
+    signal_id: str,
+    background_tasks: BackgroundTasks,
+    body: InvalidateIn | None = None,
+    sendername: str | None = Query(None, max_length=64,
+                                   description="When set, returns 404 unless signal belongs to this sender"),
+    provider_hash: str = Depends(require_provider_key),
+    db: Session = Depends(get_db),
+):
+    """
+    Mark a setup as invalidated — Quantum will cancel any pending limit/stop and stop watching it.
+
+    Works on signals in `pending`, `processing`, or `done` (e.g. limit order still waiting for fill).
+    Idempotent: calling again returns the same invalidated signal.
+    """
+    from app.webhooks import deliver_webhook, webhook_payload
+
+    row = db.get(SignalRow, signal_id)
+    if row is None or row.provider_key_hash != provider_hash:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "signal not found")
+    if sendername:
+        assert_sender_access(row, sendername)
+    if row.status == "invalidated":
+        return _invalidate_response(row, duplicate=True)
+
+    reason = (body.reason if body else None) or ""
+    row = invalidate_row(row, db, reason=reason)
+
+    callback = (row.payload or {}).get("callback_url")
+    if callback:
+        payload = webhook_payload(row, event="signal.invalidated")
+        background_tasks.add_task(deliver_webhook, callback.strip(), payload, signal_id=row.id)
+
+    return _invalidate_response(row)
+
+
+@router.post("/signals/external/{external_id}/invalidate", response_model=InvalidateOut)
+def invalidate_signal_by_external_id(
+    external_id: str,
+    background_tasks: BackgroundTasks,
+    body: InvalidateIn | None = None,
+    sendername: str = Query(..., min_length=1, max_length=64),
+    provider_hash: str = Depends(require_provider_key),
+    db: Session = Depends(get_db),
+):
+    """Invalidate by your platform message ID (`external_id`). Sender must match."""
+    ext = external_id.strip()
+    sn = sendername.strip()
+    q = select(SignalRow).where(
+        SignalRow.provider_key_hash == provider_hash,
+        SignalRow.external_id == ext,
+    )
+    q = apply_sendername_filter(q, sn)
+    row = db.execute(q).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "signal not found")
+    return invalidate_signal_by_id(
+        row.id, body=body, sendername=sn, provider_hash=provider_hash,
+        db=db, background_tasks=background_tasks,
+    )

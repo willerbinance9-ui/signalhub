@@ -35,7 +35,8 @@ Two API keys (set as environment variables on Render):
 | `POST` | `/v1/signals` | Submit open/close/modify signal |
 | `GET` | `/v1/signals` | List signals for a sender |
 | `GET` | `/v1/signals/{id}` | Poll signal status + progress |
-| `GET` | `/v1/signals/external/{external_id}` | Lookup by your message ID |
+| `POST` | `/v1/signals/{id}/invalidate` | Cancel a pending setup (limit/stop still waiting) |
+| `POST` | `/v1/signals/external/{external_id}/invalidate` | Same, keyed by your `external_id` |
 | `GET` | `/v1/logs` | Activity audit log for a sender |
 | `GET` | `/v1/positions` | Live MT5 positions for a sender |
 | `POST` | `/v1/positions/{ticket}/close` | Close one position |
@@ -271,6 +272,7 @@ After submitting a signal, poll status or use an optional webhook. **Senders onl
 | `processing` | Quantum picked it up and is executing on MT5 |
 | `done` | Finished (check `progress.executed` and `result.log_action`) |
 | `failed` | Could not execute — see `result.error` |
+| `invalidated` | Provider cancelled the setup — Quantum cancels pending orders |
 
 Every status response includes a **`progress`** object:
 
@@ -282,7 +284,51 @@ Every status response includes a **`progress`** object:
 }
 ```
 
-`stage` values: `queued`, `processing`, `executed`, `failed`, `skipped`, `done`
+`stage` values: `queued`, `processing`, `executed`, `failed`, `skipped`, `done`, `invalidated`
+
+### Invalidate a setup (provider)
+
+When a limit or stop order is still waiting for price (signal may already be `done` with a `setup_id`), call invalidate to tell Quantum to **cancel the pending order** and stop watching the entry.
+
+Works on signals in `pending`, `processing`, or `done`. Idempotent — calling again returns `duplicate: true`.
+
+**By signal ID** (optional `?sendername=` for access control):
+
+```bash
+curl -X POST "https://your-hub.onrender.com/v1/signals/SIGNAL_UUID/invalidate" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Setup deleted on Telegram"}'
+```
+
+**By your `external_id`** (`sendername` required):
+
+```bash
+curl -X POST "https://your-hub.onrender.com/v1/signals/external/post-8842/invalidate?sendername=willerfx" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Invalidated by analyst"}'
+```
+
+Response:
+
+```json
+{
+  "id": "uuid",
+  "status": "invalidated",
+  "ok": true,
+  "duplicate": false,
+  "progress": {
+    "stage": "invalidated",
+    "message": "Setup invalidated by provider",
+    "executed": false
+  }
+}
+```
+
+If you set `callback_url` on the original signal, the hub also POSTs a webhook with `event: "signal.invalidated"`.
+
+Quantum polls `GET /v1/queue/invalidations` every ~5–15 seconds, cancels MT5/EA pending orders linked to `result.setup_id`, then acks with `POST /v1/queue/{id}/invalidate-ack`.
 
 ### Option A — Poll by signal ID
 
@@ -762,6 +808,32 @@ Or close all for sender only:
   "sendername": "willerfx"
 }
 ```
+
+---
+
+## GET /v1/queue/invalidations (Quantum consumer)
+
+Poll invalidated signals that still need pending-order cancellation on MT5.
+
+```
+X-Consumer-Key: YOUR_CONSUMER_KEY
+```
+
+Optional query: `?limit=50` (max 100).
+
+Returns signals where `status` is `invalidated` and `result.invalidation_applied` is not yet `true`. After cancelling orders, ack each row:
+
+---
+
+## POST /v1/queue/{id}/invalidate-ack (Quantum consumer)
+
+Confirm Quantum cancelled pending orders for an invalidated signal.
+
+```
+X-Consumer-Key: YOUR_CONSUMER_KEY
+```
+
+Empty body `{}` is fine. Sets `result.invalidation_applied: true`.
 
 ---
 

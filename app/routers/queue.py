@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -49,6 +49,8 @@ def list_pending(
         )
     ).scalars().all()
     for row in stale:
+        if row.status == "invalidated":
+            continue
         if (row.result or {}).get("setup_id"):
             row.status = "done"
             row.updated_at = utcnow()
@@ -100,6 +102,56 @@ def list_recent(
     ).scalars().all()
     items = [_row_to_out(r) for r in rows]
     return PendingOut(items=items, count=len(items))
+
+
+@router.get("/invalidations", response_model=PendingOut)
+def list_invalidations(
+    limit: int = Query(50, ge=1, le=100),
+    _: None = Depends(require_consumer_key),
+    db: Session = Depends(get_db),
+):
+    """
+    Invalidated signals waiting for Quantum to cancel pending orders.
+
+    Poll every scan cycle; ack each with POST /v1/queue/{id}/invalidate-ack when processed.
+    """
+    from app.invalidation import needs_invalidation_processing
+
+    rows = db.execute(
+        select(SignalRow)
+        .where(SignalRow.status == "invalidated")
+        .order_by(SignalRow.updated_at.asc())
+        .limit(limit * 3)
+    ).scalars().all()
+    pending = [r for r in rows if needs_invalidation_processing(r)][:limit]
+    items = [_row_to_out(r) for r in pending]
+    return PendingOut(items=items, count=len(items))
+
+
+@router.post("/{signal_id}/invalidate-ack", response_model=AckOut)
+def ack_invalidation(
+    signal_id: str,
+    _: None = Depends(require_consumer_key),
+    db: Session = Depends(get_db),
+):
+    """Quantum confirms pending orders were cancelled for an invalidated signal."""
+    row = db.get(SignalRow, signal_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "signal not found")
+    if row.status != "invalidated":
+        raise HTTPException(status.HTTP_409_CONFLICT, "signal is not invalidated")
+
+    result = dict(row.result or {})
+    result["invalidation_applied"] = True
+    row.result = result
+    row.updated_at = utcnow()
+    db.commit()
+    record_for_signal(
+        db, row, "invalidation_applied",
+        "Quantum cancelled pending orders for invalidated setup",
+        detail={"setup_id": result.get("setup_id")},
+    )
+    return AckOut(id=signal_id, status=row.status, ok=True)
 
 
 @router.post("/{signal_id}/ack", response_model=AckOut)

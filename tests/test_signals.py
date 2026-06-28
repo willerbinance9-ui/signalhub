@@ -252,5 +252,78 @@ class TestSignalHub(unittest.TestCase):
         self.assertEqual(p["order_type"], "limit")
 
 
+    def test_invalidate_pending_signal(self):
+        created = client.post("/v1/signals", json={
+            "external_id": "ext-inv-pending",
+            "action": "open",
+            "symbol": "XAUUSD",
+            "direction": "buy",
+            "order_type": "limit",
+            "entry": 2650,
+            "sendername": "willerfx",
+        }, headers=PROVIDER).json()
+
+        inv = client.post(
+            f"/v1/signals/{created['id']}/invalidate",
+            json={"reason": "deleted on channel"},
+            headers=PROVIDER,
+        )
+        self.assertEqual(inv.status_code, 200)
+        body = inv.json()
+        self.assertEqual(body["status"], "invalidated")
+        self.assertEqual(body["progress"]["stage"], "invalidated")
+        self.assertFalse(body["duplicate"])
+
+        again = client.post(
+            f"/v1/signals/{created['id']}/invalidate",
+            headers=PROVIDER,
+        )
+        self.assertTrue(again.json()["duplicate"])
+
+        pending = client.get("/v1/queue/pending", headers=CONSUMER).json()["items"]
+        self.assertNotIn(created["id"], [i["id"] for i in pending])
+
+        inv_q = client.get("/v1/queue/invalidations", headers=CONSUMER)
+        self.assertEqual(inv_q.status_code, 200)
+        inv_ids = [i["id"] for i in inv_q.json()["items"]]
+        self.assertIn(created["id"], inv_ids)
+
+        ack = client.post(f"/v1/queue/{created['id']}/invalidate-ack", headers=CONSUMER)
+        self.assertEqual(ack.status_code, 200)
+
+        inv_q2 = client.get("/v1/queue/invalidations", headers=CONSUMER).json()["items"]
+        self.assertNotIn(created["id"], [i["id"] for i in inv_q2])
+
+    def test_invalidate_done_with_setup_id(self):
+        created = client.post("/v1/signals", json={
+            "external_id": "ext-inv-done",
+            "action": "open",
+            "symbol": "EURUSD",
+            "direction": "sell",
+            "order_type": "limit",
+            "entry": 1.10,
+            "sendername": "alice",
+        }, headers=PROVIDER).json()
+        client.post(
+            f"/v1/queue/{created['id']}/ack",
+            json={"status": "done", "setup_id": "setup-xyz", "log_action": "executed"},
+            headers=CONSUMER,
+        )
+
+        inv = client.post(
+            f"/v1/signals/external/ext-inv-done/invalidate?sendername=alice",
+            json={"reason": "no longer valid"},
+            headers=PROVIDER,
+        )
+        self.assertEqual(inv.status_code, 200)
+        got = client.get(
+            f"/v1/signals/{created['id']}?sendername=alice",
+            headers=PROVIDER,
+        ).json()
+        self.assertEqual(got["status"], "invalidated")
+        self.assertEqual(got["result"]["setup_id"], "setup-xyz")
+        self.assertEqual(got["result"]["error"], "no longer valid")
+
+
 if __name__ == "__main__":
     unittest.main()

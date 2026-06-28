@@ -14,6 +14,10 @@ def build_progress(row: SignalRow) -> dict:
     log_action = (result.get("log_action") or "").lower()
     error = result.get("error")
 
+    if status == "invalidated":
+        msg = error or "Setup marked invalid — pending orders will be cancelled"
+        return {"stage": "invalidated", "message": msg, "executed": False}
+
     if status == "pending":
         return {
             "stage": "queued",
