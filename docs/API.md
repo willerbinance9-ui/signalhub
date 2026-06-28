@@ -79,14 +79,16 @@ X-Provider-Key: your-provider-secret
 | `sendername` | string | no | Name or username of the user who posted the signal — appears in the MT5 order comment (max 64 chars, truncated to 31 in MT5) |
 | `callback_url` | string | no | HTTPS URL — hub POSTs a JSON webhook when the signal reaches `done` or `failed` |
 | `confidence` | number | no | 0–100 (default 100 for trusted execution) |
+| `force_entry` | boolean | no | **`true`** = open **now at live market price** on this symbol. Skips smart entry, limit/stop pending, and entry monitoring. Cancels any existing pending order on the same symbol first. `entry` is ignored for execution (use only for SL/TP reference if needed). Aliases: `"force"`, `"true"`, `"now"` |
 
-### Execution style: OPEN vs LIMIT
+### Execution style: OPEN vs LIMIT vs FORCE
 
 | `order_type` | Meaning | `entry` | Quantum behavior |
 |--------------|---------|---------|------------------|
 | `open` or `market` | Open now at live price | omit | **MARKET** at current bid/ask |
 | `limit` | Pending limit from your signal | **required** | **LIMIT** at `entry` |
 | `stop` | Stop order from your signal | **required** | **STOP** at `entry` |
+| *(any)* + `force_entry: true` | **Force immediate market** | ignored | **MARKET** at live price — no pending order, no smart-entry cron |
 
 When a chart image is included (`image_url` or `image_base64`), Quantum sends a **Telegram photo** with the signal caption (SL/TP, sender, message).
 
@@ -142,6 +144,28 @@ When a chart image is included (`image_url` or `image_base64`), Quantum sends a 
 ```
 
 When `sendername` is set, Quantum writes `QTE {sendername}` on the MT5 order comment (max 31 characters). Without it, hub trades use `QTE hub`.
+
+**Pair brain / symbol gate:** Signals from this API (`hub_signal_id` path) are **not** blocked by Quantum's per-pair loss filter, symbol whitelist, or bad-pair cooldown. Telegram channel signals still use pair brain when enabled.
+
+### Example — FORCE market entry (skip limits / smart entry)
+
+Use when you want an **immediate fill** on the pair — even if you previously sent a limit at another price, or price is far from your chart entry.
+
+```json
+{
+  "external_id": "post-force-991",
+  "action": "open",
+  "symbol": "XAUUSD",
+  "direction": "buy",
+  "force_entry": true,
+  "sl": 2640.0,
+  "tp": 2680.0,
+  "sendername": "willerfx",
+  "message": "Enter now — setup still valid"
+}
+```
+
+`order_type` is automatically set to `market`. Quantum cancels any pending limit/stop on `XAUUSD`, then places a **market** order at the current bid/ask.
 
 ### Responses
 

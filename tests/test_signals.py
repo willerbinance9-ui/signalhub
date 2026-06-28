@@ -324,6 +324,25 @@ class TestSignalHub(unittest.TestCase):
         self.assertEqual(got["result"]["setup_id"], "setup-xyz")
         self.assertEqual(got["result"]["error"], "no longer valid")
 
+    def test_force_entry_stored_as_market(self):
+        body = {
+            "external_id": "ext-force",
+            "action": "open",
+            "symbol": "XAUUSD",
+            "direction": "buy",
+            "order_type": "limit",
+            "entry": 2650,
+            "force_entry": True,
+            "sl": 2640,
+            "tp": 2680,
+            "sendername": "willerfx",
+        }
+        r = client.post("/v1/signals", json=body, headers=PROVIDER)
+        self.assertEqual(r.status_code, 201, r.text)
+        p = r.json()["payload"]
+        self.assertTrue(p["force_entry"])
+        self.assertEqual(p["order_type"], "market")
+
 
 if __name__ == "__main__":
     unittest.main()

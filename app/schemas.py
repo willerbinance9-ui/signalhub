@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ActionType = Literal[
     "open", "add", "close", "breakeven", "modify",
@@ -50,6 +50,28 @@ class SignalIn(BaseModel):
         None, max_length=64,
         description="MIME type when using image_base64 (default image/jpeg)",
     )
+    force_entry: bool = Field(
+        False,
+        description="Open immediately at live market price — no limit/stop pending or smart entry",
+    )
+
+    @field_validator("force_entry", mode="before")
+    @classmethod
+    def norm_force_entry(cls, v):
+        if v is None:
+            return False
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)):
+            return bool(v)
+        s = str(v).lower().strip()
+        return s in ("1", "true", "yes", "force", "now", "immediate", "market now")
+
+    @model_validator(mode="after")
+    def force_entry_is_market(self):
+        if self.force_entry:
+            self.order_type = "market"
+        return self
 
     @field_validator("image_url", mode="before")
     @classmethod
