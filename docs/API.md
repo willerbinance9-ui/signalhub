@@ -678,7 +678,8 @@ curl "https://your-hub.onrender.com/v1/senders/profitability?days=90" \
       "wins": 16,
       "losses": 9,
       "profit": 340.5,
-      "win_rate": 64.0,
+      "net_profit": 340.5,
+      "win_rate": 0.64,
       "profit_factor": 1.85,
       "expectancy": 13.62,
       "profitable": true
@@ -694,7 +695,8 @@ curl "https://your-hub.onrender.com/v1/senders/profitability?days=90" \
       "wins": 3,
       "losses": 5,
       "profit": -120.0,
-      "win_rate": 37.5,
+      "net_profit": -120.0,
+      "win_rate": 0.375,
       "profit_factor": 0.42,
       "expectancy": -15.0,
       "profitable": false
@@ -706,10 +708,36 @@ curl "https://your-hub.onrender.com/v1/senders/profitability?days=90" \
 | Field | Meaning |
 |-------|---------|
 | `rank` | Position in the sorted list (1 = best for chosen sort) |
-| `profit` | Net closed-trade P/L ($) |
+| `sender` | Sender label (matches `sendername` on `POST /v1/signals`) |
+| `sendername` | Alias of `sender` for TraderRank Pro UI |
+| `profit` / `net_profit` | Net closed-trade P/L ($) |
+| `win_rate` | Decimal 0–1 (e.g. `0.667` = 66.7%) |
 | `profit_factor` | Gross wins ÷ gross losses |
 | `expectancy` | Average $ per closed trade |
 | `profitable` | `true` when `profit > 0` and `closed_trades > 0` |
+
+### TraderRank Pro integration
+
+1. **Provider key** — any key in `PROVIDER_KEYS` on Signal Hub works for `/v1/senders/report` and `/v1/senders/profitability` (header `X-Provider-Key`).
+2. **`sendername`** — must match on every `POST /v1/signals` (e.g. `John_Doe`, `trader_80390578`). Quantum normalizes spaces to underscores on ingest.
+3. **Closed trades** — stats come from Quantum MT5 journal (linked via `setup_id` → `hub_sendername`, or MT5 comment `QTE {sendername}`). Hub does not receive per-trade webhooks; it proxies Quantum via `QUANTUM_BRIDGE_URL`.
+4. **Bridge check** — `GET /v1/bridge/status` with your provider key returns whether Render can reach Quantum.
+5. **Optional webhooks** — Quantum can also POST open/close events to TraderRank when `TRADE_OUTCOME_WEBHOOK_SECRET` is set on the VPS (separate from Hub sender report).
+
+```bash
+curl "https://signalhub-10zp.onrender.com/v1/bridge/status" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+
+curl "https://signalhub-10zp.onrender.com/v1/senders/report?days=90&limit=50&min_closed_trades=0" \
+  -H "X-Provider-Key: YOUR_PROVIDER_KEY"
+```
+
+Render env for your hub:
+
+| Variable | Example |
+|----------|---------|
+| `QUANTUM_BRIDGE_URL` | `http://170.39.184.141:8090` |
+| `CONSUMER_KEY` | same secret as Quantum **Signal Hub consumer key** |
 
 **Direct Quantum API** (same JSON, dashboard auth or hub consumer key on `/v1/hub/*`):
 

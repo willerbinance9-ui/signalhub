@@ -60,3 +60,16 @@ def get_sender_profitability(
     except RuntimeError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     return SenderReportOut(**data)
+
+
+@router.get("/bridge/status")
+def quantum_bridge_status(
+    provider_hash: str = Depends(require_provider_key),
+):
+    """
+    Verify QUANTUM_BRIDGE_URL reaches your Quantum VPS (MT5 host).
+
+    Use after deploy to confirm Render can pull sender reports and quotes.
+    """
+    from app.quantum_bridge import ping_quantum
+    return ping_quantum()

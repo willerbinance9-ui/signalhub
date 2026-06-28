@@ -76,6 +76,34 @@ def post_quote(symbol: str) -> dict:
     return _request("POST", "/v1/hub/quote", json={"symbol": symbol})
 
 
+def ping_quantum() -> dict:
+    """Health check for Quantum bridge (Render → VPS)."""
+    url, key = _bridge_config()
+    if not url or not key:
+        return {
+            "ok": False,
+            "configured": False,
+            "quantum_url": url or None,
+            "error": "QUANTUM_BRIDGE_URL and CONSUMER_KEY must be set",
+        }
+    try:
+        r = httpx.get(f"{url}/health", timeout=15)
+        body = r.json() if r.status_code == 200 else None
+        return {
+            "ok": r.status_code == 200,
+            "configured": True,
+            "quantum_url": url,
+            "quantum_health": body,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "configured": True,
+            "quantum_url": url,
+            "error": str(exc)[:300],
+        }
+
+
 def sender_report(
     days: int = 90,
     *,

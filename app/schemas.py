@@ -304,6 +304,10 @@ class QuoteOut(BaseModel):
 class SenderStatOut(BaseModel):
     rank: int | None = None
     sender: str
+    sendername: str | None = Field(
+        None,
+        description="Same as sender — TraderRank Pro UI alias",
+    )
     signals: int = 0
     executed: int = 0
     skipped: int = 0
@@ -312,7 +316,14 @@ class SenderStatOut(BaseModel):
     wins: int = 0
     losses: int = 0
     profit: float = 0.0
-    win_rate: float | None = None
+    net_profit: float | None = Field(
+        None,
+        description="Same as profit — net closed-trade P/L",
+    )
+    win_rate: float | None = Field(
+        None,
+        description="Win rate as decimal 0–1 (e.g. 0.667 = 66.7%)",
+    )
     profit_factor: float = 0.0
     expectancy: float = 0.0
     profitable: bool = False
